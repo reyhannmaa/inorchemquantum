@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edu Flappy Bird - Versi Disempurnakan</title>
+    <style>
+        /* CSS untuk UI/UX yang lebih rapi */
+        body {
+            margin: 0;
+            background-color: #2c3e50;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Mencegah scroll yang tidak disengaja */
+        }
+        
+        #game-container {
+            position: relative;
+            width: 320px;
+            height: 480px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        canvas {
+            background: linear-gradient(#70c5ce, #a2dce1); /* Gradien langit cerah */
+            display: block;
+        }
+
+        /* Tampilan UI (Overlay) */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            transition: opacity 0.3s;
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none; /* Nonaktifkan klik saat tersembunyi */
+        }
+
+        h1 { margin: 0; font-size: 36px; text-shadow: 2px 2px 0px #000; }
+        h2 { margin: 10px 0; font-size: 24px; text-shadow: 2px 2px 0px #000; color: #f1c40f; }
+        p { margin: 10px 0; font-size: 16px; font-weight: bold; }
+        
+        #score-display {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 40px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 0px #000;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #e74c3c;
+            border: 3px solid #c0392b;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 0px #c0392b;
+        }
+        button:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- Teks Skor Saat Bermain -->
+        <div id="score-display">0</div>
+        
+        <!-- Layar Mulai -->
+        <div id="start-screen" class="overlay">
+            <h1>Edu Flappy</h1>
+            <p>Tekan Spasi atau Klik untuk Terbang!</p>
+            <button id="start-btn">Mulai Game</button>
+        </div>
+
+        <!-- Layar Game Over -->
+        <div id="game-over-screen" class="overlay hidden">
+            <h1>Game Over</h1>
+            <h2 id="final-score">Skor: 0</h2>
+            <h2 id="best-score">Terbaik: 0</h2>
+            <button id="restart-btn">Main Lagi</button>
+        </div>
+
+        <canvas id="gameCanvas" width="320" height="480"></canvas>
+    </div>
+
+    <script>
+        // --- INISIALISASI CANVAS & UI ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreDisplay = document.getElementById("score-display");
+        const startScreen = document.getElementById("start-screen");
+        const gameOverScreen = document.getElementById("game-over-screen");
+        const finalScoreText = document.getElementById("final-score");
+        const bestScoreText = document.getElementById("best-score");
+        const startBtn = document.getElementById("start-btn");
+        const restartBtn = document.getElementById("restart-btn");
+
+        // --- VARIABEL & STATUS GAME ---
+        let frames = 0;
+        let score = 0;
+        let bestScore = localStorage.getItem("flappyBestScore") || 0; // Ambil skor dari browser
+        
+        // Status game: 'START', 'PLAYING', 'GAMEOVER'
+        let state = 'START'; 
+
+        // --- OBJEK GAME ---
+
+        // 1. Latar Belakang (Awan Bergerak)
+        const bg = {
+            clouds: [],
+            update() {
+                if (state !== 'PLAYING') return;
+                // Tambah awan baru sesekali
+                if (frames % 150 === 0) {
+                    this.clouds.push({ x: canvas.width, y: Math.random() * 200, size: Math.random() * 20 + 20 });
+                }
+                // Gerakkan awan ke kiri perlahan (Parallax effect)
+                this.clouds.forEach(cloud => cloud.x -= 0.5);
+                // Hapus awan yang hilang dari layar
+                this.clouds = this.clouds.filter(cloud => cloud.x + cloud.size > 0);
+            },
+            draw() {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                this.clouds.forEach(cloud => {
+                    ctx.beginPath();
+                    ctx.arc(cloud.x, cloud.y, cloud.size, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.size * 0.5, cloud.y - cloud.size * 0.3, cloud.size * 0.8, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.size, cloud.y, cloud.size * 0.9, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+        };
+
+        // 2. Burung
+        const bird = {
+            x: 50,
+            y: 200,
+            radius: 12,
+            gravity: 0.25,
+            lift: -4.5,
+            velocity: 0,
+            rotation: 0, // Untuk animasi rotasi
+            
+            draw() {
+                // Simpan konteks canvas saat ini sebelum memutar
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Rotasi berdasarkan kecepatan (velocity)
+                // Menukik ke bawah jika jatuh, mendongak jika lompat
+                this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
+                ctx.rotate(this.rotation);
+                
+                // Gambar Badan
+                ctx.fillStyle = "#f1c40f"; // Kuning
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#000";
+                ctx.stroke();
+
+                // Gambar Mata
+                ctx.fillStyle = "white";
+                ctx.beginPath();
+                ctx.arc(4, -4, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.beginPath();
+                ctx.arc(6, -4, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Gambar Paruh
+                ctx.fillStyle = "#e67e22"; // Oranye
+                ctx.beginPath();
+                ctx.moveTo(8, 0);
+                ctx.lineTo(18, 2);
+                ctx.lineTo(8, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // Gambar Sayap
+                ctx.fillStyle = "#f39c12"; // Kuning tua
+                ctx.beginPath();
+                ctx.ellipse(-4, 2, 6, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Kembalikan konteks canvas ke awal
+                ctx.restore();
+            },
+            
+            update() {
+                if (state !== 'PLAYING') return;
+
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+
+                // Tabrakan dengan tanah (Game Over)
+                if (this.y + this.radius >= canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    setGameOver();
+                }
+                // Tabrakan dengan langit-langit
+                if (this.y - this.radius <= 0) {
+                    this.y = this.radius;
+                    this.velocity = 0;
+                }
+            },
+            
+            flap() {
+                this.velocity = this.lift;
+            },
+
+            reset() {
+                this.y = 200;
+                this.velocity = 0;
+            }
+        };
+
+        // 3. Pipa
+        const pipes = {
+            position: [],
+            width: 45,
+            gap: 130, // Celah pipa
+            dx: 2.5,  // Kecepatan pipa
+            
+            draw() {
+                for (let i = 0; i < this.position.length; i++) {
+                    let p = this.position[i];
+                    let topYPos = p.y;
+                    let bottomYPos = p.y + this.gap;
+                    
+                    // Gambar pipa atas
+                    ctx.fillStyle = "#27ae60"; // Hijau tua
+                    ctx.fillRect(p.x, 0, this.width, topYPos);
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(p.x, 0, this.width, topYPos);
+                    // Gambar ujung/bibir pipa atas
+                    ctx.fillRect(p.x - 2, topYPos - 20, this.width + 4, 20);
+                    ctx.strokeRect(p.x - 2, topYPos - 20, this.width + 4, 20);
+
+                    // Gambar pipa bawah
+                    ctx.fillRect(p.x, bottomYPos, this.width, canvas.height - bottomYPos);
+                    ctx.strokeRect(p.x, bottomYPos, this.width, canvas.height - bottomYPos);
+                    // Gambar ujung/bibir pipa bawah
+                    ctx.fillRect(p.x - 2, bottomYPos, this.width + 4, 20);
+                    ctx.strokeRect(p.x - 2, bottomYPos, this.width + 4, 20);
+                }
+            },
+            
+            update() {
+                if (state !== 'PLAYING') return;
+
+                // Memunculkan pipa baru
+                if (frames % 90 === 0) {
+                    this.position.push({
+                        x: canvas.width,
+                        y: Math.random() * (canvas.height - this.gap - 100) + 40,
+                        passed: false // Penanda apakah pipa sudah dilewati untuk skor
+                    });
+                }
+
+                for (let i = 0; i < this.position.length; i++) {
+                    let p = this.position[i];
+                    p.x -= this.dx; // Bergerak ke kiri
+
+                    // Hitbox burung menggunakan kotak imajiner yang sedikit lebih kecil dari radius
+                    let birdHitbox = {
+                        left: bird.x - bird.radius + 4,
+                        right: bird.x + bird.radius - 4,
+                        top: bird.y - bird.radius + 4,
+                        bottom: bird.y + bird.radius - 4
+                    };
+
+                    // Deteksi Tabrakan
+                    if (birdHitbox.right > p.x && birdHitbox.left < p.x + this.width) {
+                        // Jika berada di area X pipa, cek Y-nya
+                        if (birdHitbox.top < p.y || birdHitbox.bottom > p.y + this.gap) {
+                            setGameOver();
+                        }
+                    }
+
+                    // Tambah skor jika melewati pipa
+                    if (p.x + this.width < birdHitbox.left && !p.passed) {
+                        score++;
+                        scoreDisplay.innerText = score;
+                        p.passed = true;
+                    }
+
+                    // Hapus pipa yang sudah keluar dari layar
+                    if (p.x + this.width <= 0) {
+                        this.position.shift();
+                        i--; // Sesuaikan indeks setelah menghapus
+                    }
+                }
+            },
+
+            reset() {
+                this.position = [];
+            }
+        };
+
+        // --- FUNGSI ALUR GAME ---
+
+        function setGameOver() {
+            state = 'GAMEOVER';
+            
+            // Simpan skor tertinggi
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem("flappyBestScore", bestScore);
+            }
+            
+            // Perbarui UI Game Over
+            finalScoreText.innerText = "Skor: " + score;
+            bestScoreText.innerText = "Terbaik: " + bestScore;
+            
+            scoreDisplay.style.display = "none"; // Sembunyikan skor besar di tengah
+            gameOverScreen.classList.remove("hidden"); // Tampilkan layar game over
+        }
+
+        function startGame() {
+            state = 'PLAYING';
+            bird.reset();
+            pipes.reset();
+            score = 0;
+            scoreDisplay.innerText = score;
+            scoreDisplay.style.display = "block";
+            
+            startScreen.classList.add("hidden");
+            gameOverScreen.classList.add("hidden");
+        }
+
+        function loop() {
+            // Bersihkan kanvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Jalankan update & draw berurutan sesuai lapisan (belakang ke depan)
+            bg.update();
+            bg.draw();
+            
+            pipes.update();
+            pipes.draw();
+            
+            bird.update();
+            bird.draw();
+
+            if (state === 'PLAYING') {
+                frames++;
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- KONTROL INPUT ---
+        function handleInput(e) {
+            // Cegah perilaku default spasi (seperti scroll bawah)
+            if (e.code === "Space") e.preventDefault(); 
+            
+            // Pastikan event ini dipicu dari klik atau tekan spasi
+            if (e.type === "mousedown" || e.code === "Space") {
+                if (state === 'START' || state === 'GAMEOVER') {
+                    // Jangan biarkan klik layar langsung merestart jika tombol yang diklik
+                    if (e.target.tagName !== "BUTTON") {
+                       // Opsi: kamu bisa mematikan fitur mulai otomatis dengan klik layar jika ingin wajib tekan tombol
+                    }
+                } else if (state === 'PLAYING') {
+                    bird.flap();
+                }
+            }
+        }
+
+        // Event Listener untuk Tombol
+        startBtn.addEventListener("click", startGame);
+        restartBtn.addEventListener("click", startGame);
+
+        // Event Listener untuk Keyboard dan Layar Canvas
+        document.addEventListener("keydown", handleInput);
+        canvas.addEventListener("mousedown", handleInput);
+
+        // Mulai rendering frame
+        loop();
+    </script>
+</body>
+</html>
