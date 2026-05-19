@@ -779,32 +779,38 @@
         };
 
         // Initialize Firebase
+        let db;
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
-
-
-        let db;
-        try { const app = initializeApp(firebaseConfig); db = getFirestore(app); console.log("Satelit Database Terhubung!"); } 
+        const db = getFirestore(app);
+        console.log("Satelit Database Terhubung!");
+ 
         catch (e) { console.log("Firebase belum diatur. Menggunakan penyimpanan Offline."); }
 
         window.saveScoreToCloud = async function(name, scr) {
-            if (!db) {
-                let lb = JSON.parse(localStorage.getItem("quantumLB")) || [];
-                lb.push({ name: name, score: scr }); lb.sort((a, b) => b.score - a.score); lb = lb.slice(0, 50);
-                localStorage.setItem("quantumLB", JSON.stringify(lb)); return;
+            try { 
+                await addDoc(collection(db, "leaderboard"), { 
+                    name: name, 
+                    score: scr, 
+                    timestamp: Date.now() 
+                }); 
+                console.log("Skor berhasil disimpan!");
+            } catch (e) { 
+                console.error("Gagal mengirim:", e); 
             }
-            try { await addDoc(collection(db, "leaderboard"), { name: name, score: scr, timestamp: Date.now() }); } catch (e) { console.error("Gagal mengirim:", e); }
         };
 
         window.fetchLeaderboardData = async function() {
-            allLeaderboardData = [];
-            if (!db) { allLeaderboardData = JSON.parse(localStorage.getItem("quantumLB")) || []; return; }
+        allLeaderboardData = [];
             try {
-                // MENGAMBIL TOP 50 PEMAIN!
                 const q = query(collection(db, "leaderboard"), orderBy("score", "desc"), limit(50));
                 const querySnapshot = await getDocs(q);
-                querySnapshot.forEach((doc) => { allLeaderboardData.push(doc.data()); });
-            } catch (e) { console.error("Gagal mengambil data:", e); }
+                querySnapshot.forEach((doc) => { 
+                    allLeaderboardData.push(doc.data()); 
+                });
+            } catch (e) { 
+                console.error("Gagal mengambil data:", e); 
+            }
         };
 
         window.renderLeaderboardTable = function() {
