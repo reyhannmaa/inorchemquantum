@@ -751,6 +751,13 @@
             isLbExpanded = false; // Selalu mulai dengan Top 5
             window.renderLeaderboardTable();
         }
+        async function initLeaderboard() {
+            await fetchLeaderboardData(); // Tunggu sampai data selesai diunduh
+            renderLeaderboardTable();     // Baru tampilkan tabelnya
+        }
+        
+        // Panggil fungsi ini
+        initLeaderboard();
 
         window.toggleLeaderboardTable = function() {
             isLbExpanded = !isLbExpanded;
@@ -801,17 +808,21 @@
         };
 
         window.fetchLeaderboardData = async function() {
-        allLeaderboardData = [];
-            try {
-                const q = query(collection(db, "leaderboard"), orderBy("score", "desc"), limit(50));
-                const querySnapshot = await getDocs(q);
-                querySnapshot.forEach((doc) => { 
-                    allLeaderboardData.push(doc.data()); 
-                });
-            } catch (e) { 
-                console.error("Gagal mengambil data:", e); 
-            }
-        };
+                allLeaderboardData = [];
+                try {
+                    const q = query(collection(db, "leaderboard"), orderBy("score", "desc"), limit(50));
+                    const querySnapshot = await getDocs(q);
+                    
+                    console.log("Jumlah data ditemukan: " + querySnapshot.size); // TAMBAHKAN INI
+                    
+                    querySnapshot.forEach((doc) => { 
+                        console.log("Data: ", doc.data()); // TAMBAHKAN INI
+                        allLeaderboardData.push(doc.data()); 
+                    });
+                } catch (e) { 
+                    console.error("Gagal mengambil data:", e); 
+                }
+            };
 
         window.renderLeaderboardTable = function() {
             let tbody = document.getElementById("lb-tbody"); tbody.innerHTML = "";
